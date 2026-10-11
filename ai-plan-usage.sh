@@ -116,12 +116,13 @@ render_bar() {
 
   local color reset_color
   reset_color=$'\033[0m'
+  # Catppuccin Mocha: https://catppuccin.com/palette/
   if (( pct <= 50 )); then
-    color=$'\033[32m'  # green
+    color=$'\033[38;2;166;227;161m'  # green #a6e3a1
   elif (( pct <= 75 )); then
-    color=$'\033[33m'  # yellow
+    color=$'\033[38;2;249;226;175m'  # yellow #f9e2af
   else
-    color=$'\033[31m'  # red
+    color=$'\033[38;2;243;139;168m'  # red #f38ba8
   fi
 
   local bar=""
