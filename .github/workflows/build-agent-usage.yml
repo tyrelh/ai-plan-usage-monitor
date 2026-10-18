@@ -1,0 +1,63 @@
+name: Build agent-usage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agent-usage/**"
+      - "tests/UsageParserChecks.swift"
+      - ".github/workflows/build-agent-usage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Only the newest push matters for a rolling release.
+concurrency:
+  group: build-agent-usage
+  cancel-in-progress: true
+
+env:
+  TAG: agent-usage-latest
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run parser checks
+        run: |
+          xcrun swiftc agent-usage/agent-usage/UsageModels.swift tests/UsageParserChecks.swift -o "$RUNNER_TEMP/parser-checks"
+          "$RUNNER_TEMP/parser-checks"
+
+      - name: Build Release app
+        run: |
+          xcodebuild -project agent-usage/agent-usage.xcodeproj -scheme agent-usage \
+            -configuration Release -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/build" CODE_SIGN_IDENTITY=- build
+
+      - name: Zip app
+        run: |
+          ditto -c -k --keepParent "$RUNNER_TEMP/build/Build/Products/Release/agent-usage.app" agent-usage.zip
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+          notes="Built from ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M UTC').
+
+          Install with:
+
+          \`\`\`sh
+          gh release download $TAG -R $GITHUB_REPOSITORY -p agent-usage.zip --clobber
+          ditto -x -k agent-usage.zip ~/Applications
+          \`\`\`"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes "$notes"
+          else
+            gh release create "$TAG" --title "agent-usage (latest main)" --notes "$notes"
+          fi
+          gh release upload "$TAG" agent-usage.zip --clobber
