@@ -2,12 +2,13 @@ import SwiftUI
 
 struct ContentView: View {
     let stores: [ProviderStore]
+    let providers: ProviderSettings
     let login: LoginSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 18) {
-                ForEach(Array(stores.enumerated()), id: \.element.provider) { index, store in
+                ForEach(Array(stores.filter { providers.isShown($0.provider) }.enumerated()), id: \.element.provider) { index, store in
                     if index > 0 { Divider() }
                     ProviderDetailView(store: store)
                         .frame(width: 314)
@@ -15,6 +16,16 @@ struct ContentView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Divider()
+            HStack(spacing: 18) {
+                ForEach(stores, id: \.provider) { store in
+                    let provider = store.provider
+                    let locked = providers.isShown(provider) && !providers.canHide(provider)
+                    Toggle("Show \(provider.name)", isOn: Binding(get: { providers.isShown(provider) }, set: { providers.setShown(provider, $0) }))
+                        .disabled(locked)
+                        .help(locked ? "At least one provider must stay visible" : "")
+                }
+            }
+            .toggleStyle(.switch).controlSize(.small)
             Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
                 .toggleStyle(.switch).controlSize(.small)
             if login.needsApproval {

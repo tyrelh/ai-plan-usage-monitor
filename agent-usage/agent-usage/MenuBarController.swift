@@ -17,11 +17,12 @@ enum UsageColors {
 final class UsagePanelController {
     private let login: LoginSettings
     private let popover = NSPopover()
+    private weak var anchor: NSStatusBarButton?
 
-    init(stores: [ProviderStore], login: LoginSettings) {
+    init(stores: [ProviderStore], providers: ProviderSettings, login: LoginSettings) {
         self.login = login
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ContentView(stores: stores, login: login))
+        popover.contentViewController = NSHostingController(rootView: ContentView(stores: stores, providers: providers, login: login))
     }
 
     func toggle(relativeTo button: NSStatusBarButton) {
@@ -29,9 +30,20 @@ final class UsagePanelController {
         else {
             login.reload()
             NSApplication.shared.activate(ignoringOtherApps: true)
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            show(relativeTo: button)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    // Moves an open popover off a status item that was just hidden.
+    func reanchor(among visible: [NSStatusBarButton]) {
+        guard popover.isShown, let first = visible.first, !visible.contains(where: { $0 === anchor }) else { return }
+        show(relativeTo: first)
+    }
+
+    private func show(relativeTo button: NSStatusBarButton) {
+        anchor = button
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 }
 
@@ -59,6 +71,12 @@ final class MenuBarController: NSObject {
         store.onChange = { [weak self] in self?.redraw() }
         redraw()
     }
+
+    var isVisible: Bool {
+        get { item.isVisible }
+        set { item.isVisible = newValue }
+    }
+    var button: NSStatusBarButton? { item.button }
 
     @objc private func togglePanel() {
         guard let button = item.button else { return }
