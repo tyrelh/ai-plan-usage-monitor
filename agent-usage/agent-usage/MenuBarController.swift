@@ -58,7 +58,7 @@ final class MenuBarController: NSObject {
         self.store = store
         self.panel = panel
         // Fixed compact width reserves space during loading and failure too.
-        item = NSStatusBar.system.statusItem(withLength: 132)
+        item = NSStatusBar.system.statusItem(withLength: 108)
         super.init()
         item.autosaveName = "agent-usage-\(store.provider.rawValue)"
         if let button = item.button {
@@ -88,7 +88,7 @@ final class MenuBarController: NSObject {
         let windows = store.windows
         let marker = store.marker
         let logo = NSImage(named: store.provider.logo)
-        let image = NSImage(size: NSSize(width: 128, height: 22))
+        let image = NSImage(size: NSSize(width: 108, height: 22))
         button.effectiveAppearance.performAsCurrentDrawingAppearance {
             image.lockFocus()
             defer { image.unlockFocus() }
@@ -100,21 +100,28 @@ final class MenuBarController: NSObject {
                 NSColor.labelColor.setFill()
                 NSRect(x: 0, y: 0, width: 17, height: 17).fill(using: .sourceIn)
                 tinted.unlockFocus()
-                tinted.draw(in: NSRect(x: 1, y: 2.5, width: 17, height: 17))
+                tinted.draw(in: NSRect(x: 0, y: 2.5, width: 17, height: 17))
             }
             for (index, window) in windows.enumerated() {
                 let y: CGFloat = index == 0 ? 12 : 1
-                drawText(window.label, x: 22, y: y, width: 27, alignment: .left)
-                let track = NSRect(x: 50, y: y + 3, width: 34, height: 5)
+                drawText(window.label, x: 21, y: y, width: 19, alignment: .left)
+                let track = NSRect(x: 41, y: y + 3, width: 34, height: 5)
                 NSColor.labelColor.withAlphaComponent(0.16).setFill()
                 NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
                 if window.fraction > 0 {
                     UsageColors.color(window.utilization).setFill()
                     NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * window.fraction, height: track.height), xRadius: 2, yRadius: 2).fill()
                 }
-                drawText(window.percent, x: 86, y: y, width: 31, alignment: .right)
+                drawText(window.percent, x: 77, y: y, width: 31, alignment: .right)
             }
-            drawText(marker, x: 119, y: 6, width: 9, alignment: .center)
+            if !marker.isEmpty {
+                // Badge over the logo's bottom-right corner; punch out the logo behind it so the marker reads.
+                let badge = NSRect(x: 8, y: 1.5, width: 10, height: 10)
+                NSGraphicsContext.current?.compositingOperation = .clear
+                NSBezierPath(ovalIn: badge).fill()
+                NSGraphicsContext.current?.compositingOperation = .sourceOver
+                drawText(marker, x: badge.minX, y: badge.minY - 0.5, width: badge.width, alignment: .center)
+            }
         }
         image.isTemplate = false
         button.image = image
