@@ -14,35 +14,17 @@ enum UsageColors {
 }
 
 @MainActor
-final class MenuBarController: NSObject {
-    let store: ProviderStore
+final class UsagePanelController {
     private let login: LoginSettings
-    private let item: NSStatusItem
     private let popover = NSPopover()
-    private var appearanceObservation: NSKeyValueObservation?
 
-    init(provider: Provider, login: LoginSettings) {
-        store = ProviderStore(provider: provider)
+    init(stores: [ProviderStore], login: LoginSettings) {
         self.login = login
-        // Fixed compact width reserves space during loading and failure too.
-        item = NSStatusBar.system.statusItem(withLength: 132)
-        super.init()
-        item.autosaveName = "agent-usage-\(provider.rawValue)"
-        if let button = item.button {
-            button.target = self
-            button.action = #selector(togglePanel)
-            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor [weak self] in self?.redraw() }
-            }
-        }
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: ContentView(store: store, login: login))
-        store.onChange = { [weak self] in self?.redraw() }
-        redraw()
+        popover.contentViewController = NSHostingController(rootView: ContentView(stores: stores, login: login))
     }
 
-    @objc private func togglePanel() {
-        guard let button = item.button else { return }
+    func toggle(relativeTo button: NSStatusBarButton) {
         if popover.isShown { popover.performClose(nil) }
         else {
             login.reload()
@@ -50,6 +32,37 @@ final class MenuBarController: NSObject {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+}
+
+@MainActor
+final class MenuBarController: NSObject {
+    let store: ProviderStore
+    private let panel: UsagePanelController
+    private let item: NSStatusItem
+    private var appearanceObservation: NSKeyValueObservation?
+
+    init(store: ProviderStore, panel: UsagePanelController) {
+        self.store = store
+        self.panel = panel
+        // Fixed compact width reserves space during loading and failure too.
+        item = NSStatusBar.system.statusItem(withLength: 132)
+        super.init()
+        item.autosaveName = "agent-usage-\(store.provider.rawValue)"
+        if let button = item.button {
+            button.target = self
+            button.action = #selector(togglePanel)
+            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in self?.redraw() }
+            }
+        }
+        store.onChange = { [weak self] in self?.redraw() }
+        redraw()
+    }
+
+    @objc private func togglePanel() {
+        guard let button = item.button else { return }
+        panel.toggle(relativeTo: button)
     }
 
     private func redraw() {

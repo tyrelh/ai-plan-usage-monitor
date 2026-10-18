@@ -33,8 +33,9 @@ Terminal bars for Claude and Codex plan usage (5-hour, 7-day).
 
 Open `agent-usage/agent-usage.xcodeproj` in Xcode, select the **agent-usage**
 scheme and **My Mac**, then Run. Requires macOS 14 or newer. It runs without a
-Dock icon; click either provider's menu bar item for details, Refresh, launch at
-login, and Quit. Each item is 132 points wide, with the short window above the
+Dock icon; click either provider's menu bar item to open the shared pane with
+Claude and Codex details side by side, individual Refresh buttons, launch at login,
+and Quit. Each item is 132 points wide, with the short window above the
 long window. `—` means unavailable; `…` means loading; `!` means an error (the last
 successful values remain visible when available).
 

@@ -16,7 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
-        controllers = Provider.allCases.map { MenuBarController(provider: $0, login: login) }
+        let stores = Provider.allCases.map { ProviderStore(provider: $0) }
+        let panel = UsagePanelController(stores: stores, login: login)
+        controllers = stores.map { MenuBarController(store: $0, panel: panel) }
         controllers.forEach { $0.store.refresh() }
         scheduleRefresh()
         #if DEBUG

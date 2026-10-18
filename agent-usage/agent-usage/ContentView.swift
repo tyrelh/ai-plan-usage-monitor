@@ -1,8 +1,37 @@
 import SwiftUI
 
 struct ContentView: View {
-    let store: ProviderStore
+    let stores: [ProviderStore]
     let login: LoginSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 18) {
+                ForEach(Array(stores.enumerated()), id: \.element.provider) { index, store in
+                    if index > 0 { Divider() }
+                    ProviderDetailView(store: store)
+                        .frame(width: 314)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
+                .toggleStyle(.switch).controlSize(.small)
+            if login.needsApproval {
+                Button("Approve in Login Items…") { login.openSettings() }
+            }
+            if let error = login.error { Text(error).font(.caption).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                Button("Quit Agent Usage") { NSApplication.shared.terminate(nil) }.font(.caption)
+            }
+        }
+        .padding(18)
+    }
+}
+
+private struct ProviderDetailView: View {
+    let store: ProviderStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -15,7 +44,7 @@ struct ContentView: View {
                 Spacer()
                 if store.isRefreshing { ProgressView().controlSize(.small) }
                 Button { store.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                    .help("Refresh usage").accessibilityLabel("Refresh usage")
+                    .help("Refresh \(store.provider.name) usage").accessibilityLabel("Refresh \(store.provider.name) usage")
                     .disabled(store.isRefreshing)
             }
             ForEach(Array(store.windows.enumerated()), id: \.offset) { index, window in
@@ -75,19 +104,7 @@ struct ContentView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            Divider()
-            Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
-                .toggleStyle(.switch).controlSize(.small)
-            if login.needsApproval {
-                Button("Approve in Login Items…") { login.openSettings() }
-            }
-            if let error = login.error { Text(error).font(.caption).foregroundStyle(.red) }
-            HStack {
-                Spacer()
-                Button("Quit Agent Usage") { NSApplication.shared.terminate(nil) }.font(.caption)
-            }
+
         }
-        .padding(18)
-        .frame(width: 350)
     }
 }
