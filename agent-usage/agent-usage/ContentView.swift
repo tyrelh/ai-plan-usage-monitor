@@ -1,0 +1,93 @@
+import SwiftUI
+
+struct ContentView: View {
+    let store: ProviderStore
+    let login: LoginSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(store.provider.logo).resizable().renderingMode(.template).frame(width: 26, height: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.provider.name).font(.headline)
+                    Text("Subscription usage").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if store.isRefreshing { ProgressView().controlSize(.small) }
+                Button { store.refresh() } label: { Image(systemName: "arrow.clockwise") }
+                    .help("Refresh usage").accessibilityLabel("Refresh usage")
+                    .disabled(store.isRefreshing)
+            }
+            ForEach(Array(store.windows.enumerated()), id: \.offset) { index, window in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text(window.seconds == nil ? "\(index == 0 ? "First" : "Second") window unavailable" : "\(window.label) window")
+                        Spacer()
+                        Text(window.utilization == nil ? "Unavailable" : "\(window.percent) used").monospacedDigit()
+                    }.font(.subheadline)
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.primary.opacity(0.09))
+                            Capsule().fill(Color(UsageColors.color(window.utilization)))
+                                .frame(width: geometry.size.width * window.fraction)
+                        }
+                    }.frame(height: 7)
+                    if let reset = window.resetsAt {
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            HStack(spacing: 4) {
+                                Text(reset > context.date ? "Resets" : "Reset was")
+                                Text(reset, style: .relative)
+                                Text(reset > context.date ? "from now" : "ago")
+                            }
+                        }.font(.caption).foregroundStyle(.secondary)
+                        Text(reset, format: .dateTime.weekday().month().day().hour().minute())
+                            .font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        Text("Reset time unavailable").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let extra = store.reading?.extra {
+                Divider()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Extra usage\(extra.isEnabled == false ? " · disabled" : "")").font(.subheadline.weight(.medium))
+                    if let used = extra.usedCredits {
+                        Text("\(used.formatted())\(extra.currency.map { " " + $0 } ?? " credits") used\(extra.monthlyLimit.map { " of " + $0.formatted() } ?? "")")
+                            .font(.caption)
+                    } else { Text("Credits unavailable").font(.caption) }
+                    if let utilization = extra.utilization { Text("\(utilization.formatted())% of monthly limit").font(.caption) }
+                }
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(store.status).font(.caption).foregroundStyle(store.error == nil ? Color.secondary : Color.orange)
+                if let date = store.reading?.fetchedAt {
+                    Text("Last success: \(date.formatted(date: .abbreviated, time: .standard))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let error = store.error {
+                    Text(error).font(.caption).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Refreshes every 10 minutes.").font(.caption).foregroundStyle(.secondary)
+                if store.provider == .claude {
+                    Text("Expired logins renew through Claude CLI. Its small prompt may use plan allowance.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            Divider()
+            Toggle("Launch at login", isOn: Binding(get: { login.enabled }, set: { login.setEnabled($0) }))
+                .toggleStyle(.switch).controlSize(.small)
+            if login.needsApproval {
+                Button("Approve in Login Items…") { login.openSettings() }
+            }
+            if let error = login.error { Text(error).font(.caption).foregroundStyle(.red) }
+            HStack {
+                Spacer()
+                Button("Quit Agent Usage") { NSApplication.shared.terminate(nil) }.font(.caption)
+            }
+        }
+        .padding(18)
+        .frame(width: 350)
+    }
+}
