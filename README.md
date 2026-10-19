@@ -1,4 +1,4 @@
-# ai-plan-usage
+# MacOS AI Plan Meter (Claude & Codex)
 
 Claude and Codex plan usage (5-hour, 7-day) in the macOS menu bar or the terminal.
 
