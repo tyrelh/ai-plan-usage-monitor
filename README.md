@@ -17,7 +17,7 @@ Claude and Codex plan usage (5-hour, 7-day) in the macOS menu bar or the termina
 Quit any running copy, then:
 
 ```sh
-gh release download agent-usage-latest -R tyrelh/claude-usage -p agent-usage.zip --clobber
+gh release download agent-usage-latest -R tyrelh/ai-plan-usage-monitor -p agent-usage.zip --clobber
 ditto -x -k agent-usage.zip ~/Applications
 open ~/Applications/agent-usage.app
 ```
