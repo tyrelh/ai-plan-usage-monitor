@@ -88,7 +88,7 @@ final class MenuBarController: NSObject {
         let windows = store.windows
         let marker = store.marker
         let logo = NSImage(named: store.provider.logo)
-        let image = NSImage(size: NSSize(width: 108, height: 22))
+        let image = NSImage(size: NSSize(width: 102.5, height: 22))
         button.effectiveAppearance.performAsCurrentDrawingAppearance {
             image.lockFocus()
             defer { image.unlockFocus() }
@@ -112,7 +112,7 @@ final class MenuBarController: NSObject {
                     UsageColors.color(window.utilization).setFill()
                     NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * window.fraction, height: track.height), xRadius: 2, yRadius: 2).fill()
                 }
-                drawText(window.percent, x: 77, y: y, width: 31, alignment: .right)
+                drawText(window.percent, x: 75.5, y: y, width: 27, alignment: .right)
             }
             if !marker.isEmpty {
                 // Badge over the logo's bottom-right corner; punch out the logo behind it so the marker reads.
