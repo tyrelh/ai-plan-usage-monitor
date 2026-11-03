@@ -86,8 +86,8 @@ final class MenuBarController: NSObject {
         let logo = NSImage(named: store.provider.logo)
         // AppKit runs the handler at draw time under each menu bar's appearance, so
         // labelColor resolves per display without observing appearance changes.
-        let image = NSImage(size: NSSize(width: 102.5, height: 22), flipped: false) { [self] _ in
-            MainActor.assumeIsolated { draw(windows: windows, marker: marker, logo: logo) }
+        let image = NSImage(size: NSSize(width: 102.5, height: 22), flipped: false) { _ in
+            MainActor.assumeIsolated { Self.draw(windows: windows, marker: marker, logo: logo) }
             return true
         }
         image.isTemplate = false
@@ -97,7 +97,7 @@ final class MenuBarController: NSObject {
         button.setAccessibilityLabel(description)
     }
 
-    private func draw(windows: [UsageWindow], marker: String, logo: NSImage?) {
+    private static func draw(windows: [UsageWindow], marker: String, logo: NSImage?) {
         // Tint the SVG explicitly: the composite image also contains colored gauges.
         if let logo {
             let tinted = NSImage(size: NSSize(width: 17, height: 17))
@@ -145,7 +145,7 @@ final class MenuBarController: NSObject {
     }
     #endif
 
-    private func drawText(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, alignment: NSTextAlignment) {
+    private static func drawText(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, alignment: NSTextAlignment) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byClipping
