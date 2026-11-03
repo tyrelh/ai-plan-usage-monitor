@@ -52,7 +52,6 @@ final class MenuBarController: NSObject {
     let store: ProviderStore
     private let panel: UsagePanelController
     private let item: NSStatusItem
-    private var appearanceObservation: NSKeyValueObservation?
 
     init(store: ProviderStore, panel: UsagePanelController) {
         self.store = store
@@ -64,9 +63,6 @@ final class MenuBarController: NSObject {
         if let button = item.button {
             button.target = self
             button.action = #selector(togglePanel)
-            appearanceObservation = button.observe(\.effectiveAppearance, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor [weak self] in self?.redraw() }
-            }
         }
         store.onChange = { [weak self] in self?.redraw() }
         redraw()
@@ -88,46 +84,50 @@ final class MenuBarController: NSObject {
         let windows = store.windows
         let marker = store.marker
         let logo = NSImage(named: store.provider.logo)
-        let image = NSImage(size: NSSize(width: 102.5, height: 22))
-        button.effectiveAppearance.performAsCurrentDrawingAppearance {
-            image.lockFocus()
-            defer { image.unlockFocus() }
-            // Tint the SVG explicitly: the composite image also contains colored gauges.
-            if let logo {
-                let tinted = NSImage(size: NSSize(width: 17, height: 17))
-                tinted.lockFocus()
-                logo.draw(in: NSRect(x: 0, y: 0, width: 17, height: 17))
-                NSColor.labelColor.setFill()
-                NSRect(x: 0, y: 0, width: 17, height: 17).fill(using: .sourceIn)
-                tinted.unlockFocus()
-                tinted.draw(in: NSRect(x: 0, y: 2.5, width: 17, height: 17))
-            }
-            for (index, window) in windows.enumerated() {
-                let y: CGFloat = index == 0 ? 12 : 1
-                drawText(window.label, x: 21, y: y, width: 19, alignment: .left)
-                let track = NSRect(x: 41, y: y + 3, width: 34, height: 5)
-                NSColor.labelColor.withAlphaComponent(0.16).setFill()
-                NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
-                if window.fraction > 0 {
-                    UsageColors.color(window.utilization).setFill()
-                    NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * window.fraction, height: track.height), xRadius: 2, yRadius: 2).fill()
-                }
-                drawText(window.percent, x: 75.5, y: y, width: 27, alignment: .right)
-            }
-            if !marker.isEmpty {
-                // Badge over the logo's bottom-right corner; punch out the logo behind it so the marker reads.
-                let badge = NSRect(x: 8, y: 1.5, width: 10, height: 10)
-                NSGraphicsContext.current?.compositingOperation = .clear
-                NSBezierPath(ovalIn: badge).fill()
-                NSGraphicsContext.current?.compositingOperation = .sourceOver
-                drawText(marker, x: badge.minX, y: badge.minY - 0.5, width: badge.width, alignment: .center)
-            }
+        // AppKit runs the handler at draw time under each menu bar's appearance, so
+        // labelColor resolves per display without observing appearance changes.
+        let image = NSImage(size: NSSize(width: 102.5, height: 22), flipped: false) { _ in
+            MainActor.assumeIsolated { Self.draw(windows: windows, marker: marker, logo: logo) }
+            return true
         }
         image.isTemplate = false
         button.image = image
         let description = "\(store.provider.name): " + windows.map { "\($0.label) \($0.percent) used" }.joined(separator: ", ") + ". \(store.status)"
         button.toolTip = description
         button.setAccessibilityLabel(description)
+    }
+
+    private static func draw(windows: [UsageWindow], marker: String, logo: NSImage?) {
+        // Tint the SVG explicitly: the composite image also contains colored gauges.
+        if let logo {
+            let tinted = NSImage(size: NSSize(width: 17, height: 17))
+            tinted.lockFocus()
+            logo.draw(in: NSRect(x: 0, y: 0, width: 17, height: 17))
+            NSColor.labelColor.setFill()
+            NSRect(x: 0, y: 0, width: 17, height: 17).fill(using: .sourceIn)
+            tinted.unlockFocus()
+            tinted.draw(in: NSRect(x: 0, y: 2.5, width: 17, height: 17))
+        }
+        for (index, window) in windows.enumerated() {
+            let y: CGFloat = index == 0 ? 12 : 1
+            drawText(window.label, x: 21, y: y, width: 19, alignment: .left)
+            let track = NSRect(x: 41, y: y + 3, width: 34, height: 5)
+            NSColor.labelColor.withAlphaComponent(0.16).setFill()
+            NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
+            if window.fraction > 0 {
+                UsageColors.color(window.utilization).setFill()
+                NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * window.fraction, height: track.height), xRadius: 2, yRadius: 2).fill()
+            }
+            drawText(window.percent, x: 75.5, y: y, width: 27, alignment: .right)
+        }
+        if !marker.isEmpty {
+            // Badge over the logo's bottom-right corner; punch out the logo behind it so the marker reads.
+            let badge = NSRect(x: 8, y: 1.5, width: 10, height: 10)
+            NSGraphicsContext.current?.compositingOperation = .clear
+            NSBezierPath(ovalIn: badge).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            drawText(marker, x: badge.minX, y: badge.minY - 0.5, width: badge.width, alignment: .center)
+        }
     }
 
     #if DEBUG
@@ -145,7 +145,7 @@ final class MenuBarController: NSObject {
     }
     #endif
 
-    private func drawText(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, alignment: NSTextAlignment) {
+    private static func drawText(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, alignment: NSTextAlignment) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
         paragraph.lineBreakMode = .byClipping
