@@ -56,7 +56,7 @@ final class MenuBarController: NSObject {
     init(store: ProviderStore, panel: UsagePanelController) {
         self.store = store
         self.panel = panel
-        // Fixed compact width reserves space during loading and failure too.
+        // Fixed width reserves space during loading and failure too.
         item = NSStatusBar.system.statusItem(withLength: 108)
         super.init()
         item.autosaveName = "agent-usage-\(store.provider.rawValue)"
@@ -73,6 +73,14 @@ final class MenuBarController: NSObject {
         set { item.isVisible = newValue }
     }
     var button: NSStatusBarButton? { item.button }
+    // Compact omits the window labels and percentages, leaving the logo and bars.
+    var isCompact = false {
+        didSet {
+            guard isCompact != oldValue else { return }
+            item.length = isCompact ? 61 : 108
+            redraw()
+        }
+    }
 
     @objc private func togglePanel() {
         guard let button = item.button else { return }
@@ -84,10 +92,11 @@ final class MenuBarController: NSObject {
         let windows = store.windows
         let marker = store.marker
         let logo = NSImage(named: store.provider.logo)
+        let compact = isCompact
         // AppKit runs the handler at draw time under each menu bar's appearance, so
         // labelColor resolves per display without observing appearance changes.
-        let image = NSImage(size: NSSize(width: 102.5, height: 22), flipped: false) { _ in
-            MainActor.assumeIsolated { Self.draw(windows: windows, marker: marker, logo: logo) }
+        let image = NSImage(size: NSSize(width: compact ? 55.5 : 102.5, height: 22), flipped: false) { _ in
+            MainActor.assumeIsolated { Self.draw(windows: windows, marker: marker, logo: logo, compact: compact) }
             return true
         }
         image.isTemplate = false
@@ -97,7 +106,7 @@ final class MenuBarController: NSObject {
         button.setAccessibilityLabel(description)
     }
 
-    private static func draw(windows: [UsageWindow], marker: String, logo: NSImage?) {
+    private static func draw(windows: [UsageWindow], marker: String, logo: NSImage?, compact: Bool) {
         // Tint the SVG explicitly: the composite image also contains colored gauges.
         if let logo {
             let tinted = NSImage(size: NSSize(width: 17, height: 17))
@@ -110,15 +119,15 @@ final class MenuBarController: NSObject {
         }
         for (index, window) in windows.enumerated() {
             let y: CGFloat = index == 0 ? 12 : 1
-            drawText(window.label, x: 21, y: y, width: 19, alignment: .left)
-            let track = NSRect(x: 41, y: y + 3, width: 34, height: 5)
+            if !compact { drawText(window.label, x: 21, y: y, width: 19, alignment: .left) }
+            let track = NSRect(x: compact ? 21 : 41, y: y + 3, width: 34, height: 5)
             NSColor.labelColor.withAlphaComponent(0.16).setFill()
             NSBezierPath(roundedRect: track, xRadius: 2, yRadius: 2).fill()
             if window.fraction > 0 {
                 UsageColors.color(window.utilization).setFill()
                 NSBezierPath(roundedRect: NSRect(x: track.minX, y: track.minY, width: track.width * window.fraction, height: track.height), xRadius: 2, yRadius: 2).fill()
             }
-            drawText(window.percent, x: 75.5, y: y, width: 27, alignment: .right)
+            if !compact { drawText(window.percent, x: 75.5, y: y, width: 27, alignment: .right) }
         }
         if !marker.isEmpty {
             // Badge over the logo's bottom-right corner; punch out the logo behind it so the marker reads.

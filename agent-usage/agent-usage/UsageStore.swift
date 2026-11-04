@@ -43,7 +43,9 @@ final class ProviderStore {
 @MainActor @Observable
 final class ProviderSettings {
     private static let key = "hiddenProviders"
+    private static let compactKey = "compactProviders"
     private(set) var hidden: Set<Provider>
+    private(set) var compact: Set<Provider>
     @ObservationIgnored var onChange: (() -> Void)?
 
     init() {
@@ -51,6 +53,16 @@ final class ProviderSettings {
         let hidden = Set(stored.compactMap(Provider.init(rawValue:)))
         // Never start with every provider hidden, or nothing would be clickable.
         self.hidden = hidden.count < Provider.allCases.count ? hidden : []
+        compact = Set((UserDefaults.standard.stringArray(forKey: Self.compactKey) ?? []).compactMap(Provider.init(rawValue:)))
+    }
+
+    func isCompact(_ provider: Provider) -> Bool { compact.contains(provider) }
+
+    func setCompact(_ provider: Provider, _ value: Bool) {
+        guard value != isCompact(provider) else { return }
+        if value { compact.insert(provider) } else { compact.remove(provider) }
+        UserDefaults.standard.set(compact.map(\.rawValue).sorted(), forKey: Self.compactKey)
+        onChange?()
     }
 
     func isShown(_ provider: Provider) -> Bool { !hidden.contains(provider) }
