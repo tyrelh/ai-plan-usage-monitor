@@ -21,13 +21,13 @@ final class ProviderStore {
         return reading == nil ? "Waiting for first reading" : "Updated successfully"
     }
 
-    func refresh(reconnectClaude: Bool = false) {
+    func refresh(reconnect: Bool = false) {
         guard !isRefreshing else { return }
         isRefreshing = true
         onChange?()
         Task {
             do {
-                reading = try await client.fetch(provider, reconnectClaude: reconnectClaude)
+                reading = try await client.fetch(provider, reconnectClaude: reconnect, reconnectKimi: reconnect)
                 error = nil
                 needsReconnect = false
             } catch {

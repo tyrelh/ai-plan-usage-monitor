@@ -1,6 +1,6 @@
-# MacOS AI Plan Meter (Claude & Codex)
+# macOS AI Plan Meter
 
-Claude and Codex plan usage (5-hour, 7-day) in the macOS menu bar or the terminal.
+Claude Code, Codex, and Kimi Code subscription usage in the macOS menu bar, plus a Claude and Codex terminal script.
 
 ## macOS menu bar app
 
@@ -11,6 +11,7 @@ Claude and Codex plan usage (5-hour, 7-day) in the macOS menu bar or the termina
 - macOS 14+
 - Claude: `claude` CLI logged in
 - Codex: `codex login` with ChatGPT and file credential store (`~/.codex/auth.json`)
+- Kimi Code: `kimi login` with Kimi Code OAuth
 
 ### Install
 
@@ -26,6 +27,8 @@ open ~/Applications/agent-usage.app
 - Browser download instead: `xattr -dr com.apple.quarantine ~/Applications/agent-usage.app`
 
 Claude usage is fetched from the subscription API every ten minutes, including usage from other machines. The app caches the access token only in memory until shortly before expiry. Background refreshes never display Keychain prompts or launch Claude CLI. If access or renewal is needed, the panel keeps the last reading and offers **Reconnect Claude…**. Reconnecting can prompt for Keychain access and renew expired credentials through a small Claude CLI prompt that may use plan allowance.
+
+Kimi Code usage is fetched every ten minutes through the same usage endpoint as Kimi Code CLI, with menu bar rows labeled `5h` and `1M` for the rolling five-hour and monthly total quotas. The app reads the existing OAuth credential file on each refresh and never launches Kimi CLI in the background. If the login expires, choose **Reconnect Kimi…** to renew through `kimi login` without using plan allowance. If Kimi requires reauthorization, run `kimi login` in Terminal and refresh. `KIMI_CODE_HOME` and `KIMI_CODE_BASE_URL` overrides are respected.
 
 ### Menu bar markers
 
@@ -95,4 +98,4 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc \
 
 ## Credits
 
-Logos from [Simple Icons](https://github.com/simple-icons/simple-icons) (CC0): [Claude](https://github.com/simple-icons/simple-icons/blob/develop/icons/claude.svg), [OpenAI](https://github.com/simple-icons/simple-icons/blob/15.0.0/icons/openai.svg). Marks belong to their owners.
+Logos from [Simple Icons](https://github.com/simple-icons/simple-icons) (CC0): [Claude](https://github.com/simple-icons/simple-icons/blob/develop/icons/claude.svg), [OpenAI](https://github.com/simple-icons/simple-icons/blob/15.0.0/icons/openai.svg), [Kimi](https://github.com/simple-icons/simple-icons/blob/develop/icons/kimi.svg). Marks belong to their owners.
