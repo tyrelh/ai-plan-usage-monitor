@@ -27,7 +27,7 @@ final class ProviderStore {
         onChange?()
         Task {
             do {
-                reading = try await client.fetch(provider, reconnectClaude: reconnect, reconnectKimi: reconnect)
+                reading = try await client.fetch(provider, reconnect: reconnect)
                 error = nil
                 needsReconnect = false
             } catch {

@@ -71,7 +71,7 @@ struct UsageClientChecks {
 
         // An explicit reconnect bypasses a valid cached token and permits a prompt.
         state.withLock { $0.token = "switched-account" }
-        _ = try await monitor.fetch(.claude, reconnectClaude: true)
+        _ = try await monitor.fetch(.claude, reconnect: true)
         state.withLock {
             precondition($0.reads == [false, true])
             precondition($0.requests.last == "Bearer switched-account")
@@ -87,7 +87,7 @@ struct UsageClientChecks {
             precondition($0.renewals == 0)
             $0.status = 200
         }
-        _ = try await monitor.fetch(.claude, reconnectClaude: true)
+        _ = try await monitor.fetch(.claude, reconnect: true)
 
         // Near-expired credentials never start Claude CLI during background polling.
         let expired = OSAllocatedUnfairLock(initialState: State(expiresAt: Date().addingTimeInterval(30)))
@@ -96,7 +96,7 @@ struct UsageClientChecks {
         expired.withLock {
             precondition($0.renewals == 0 && $0.requests.isEmpty && $0.reads == [false])
         }
-        _ = try await expiredMonitor.fetch(.claude, reconnectClaude: true)
+        _ = try await expiredMonitor.fetch(.claude, reconnect: true)
         _ = try await expiredMonitor.fetch(.claude)
         expired.withLock {
             precondition($0.renewals == 1 && $0.reads == [false, true, true])
@@ -152,7 +152,7 @@ struct UsageClientChecks {
             _ = try await kimi.fetch(.kimi)
             fatalError("Expected Kimi expiry error")
         } catch is UsageFailure {}
-        _ = try await kimi.fetch(.kimi, reconnectKimi: true)
+        _ = try await kimi.fetch(.kimi, reconnect: true)
         precondition(kimiState.withLock { $0.renewals } == 1)
         precondition(kimiState.withLock { $0.requests } == [
             "https://api.kimi.com/coding/v1/usages", "Bearer kimi-token",

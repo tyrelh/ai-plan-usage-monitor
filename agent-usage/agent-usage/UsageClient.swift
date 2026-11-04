@@ -39,11 +39,11 @@ actor UsageClient {
         self.now = now
     }
 
-    func fetch(_ provider: Provider, reconnectClaude: Bool = false, reconnectKimi: Bool = false) async throws -> UsageReading {
+    func fetch(_ provider: Provider, reconnect: Bool = false) async throws -> UsageReading {
         var request: URLRequest
         switch provider {
         case .claude:
-            let credentials = try await claudeCredentials(allowInteraction: reconnectClaude)
+            let credentials = try await claudeCredentials(allowInteraction: reconnect)
             request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
             request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -55,12 +55,9 @@ actor UsageClient {
             request.setValue(credentials.account_id, forHTTPHeaderField: "ChatGPT-Account-Id")
             request.setValue("codex-cli", forHTTPHeaderField: "User-Agent")
         case .kimi:
-            var credentials = try readKimiCredentials()
-            if reconnectKimi {
-                try await kimiRenewer()
-                credentials = try readKimiCredentials()
-            }
-            if let expiresAt = credentials.expires_at, expiresAt <= now().timeIntervalSince1970 + 60 {
+            if reconnect { try await kimiRenewer() }
+            let credentials = try readKimiCredentials()
+            if let expiresAt = credentials.expires_at, !isCurrent(expiresAt: expiresAt) {
                 throw UsageFailure(message: "Kimi Code's login has expired or expires shortly. \(Provider.kimi.loginHelp)")
             }
             let baseURL = (ProcessInfo.processInfo.environment["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding/v1")
@@ -110,8 +107,10 @@ actor UsageClient {
         return credentials
     }
 
-    private func isCurrent(_ credentials: ClaudeCredentials.OAuth) -> Bool {
-        credentials.expiresAt / 1000 > now().timeIntervalSince1970 + 60
+    private func isCurrent(_ credentials: ClaudeCredentials.OAuth) -> Bool { isCurrent(expiresAt: credentials.expiresAt / 1000) }
+
+    private func isCurrent(expiresAt seconds: Double) -> Bool {
+        seconds > now().timeIntervalSince1970 + 60
     }
 
     private func decodeClaudeCredentials(_ data: Data) throws -> ClaudeCredentials.OAuth {
@@ -198,50 +197,32 @@ actor UsageClient {
     }
 
     private static func renewClaude() async throws {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/claude").path,
-                          "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
-            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/claude" }
-        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw UsageFailure(message: "Claude credentials expired, but the claude CLI was not found in ~/.local/bin, Homebrew, or PATH. \(Provider.claude.loginHelp)")
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-p", "ok", "--model", "haiku"]
-        process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = "\(home.path)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (environment["PATH"] ?? "")
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() }
-        catch { throw UsageFailure(message: "Could not start Claude to renew credentials. \(Provider.claude.loginHelp)") }
-        let deadline = Date().addingTimeInterval(60)
-        while process.isRunning && Date() < deadline {
-            try await Task.sleep(for: .milliseconds(250))
-        }
-        if process.isRunning {
-            process.terminate()
-            try await Task.sleep(for: .seconds(1))
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            throw UsageFailure(message: "Claude login renewal timed out. \(Provider.claude.loginHelp)")
-        }
+        try await runCLI("claude", arguments: ["-p", "ok", "--model", "haiku"],
+                         notFound: "Claude credentials expired, but the claude CLI was not found in ~/.local/bin, Homebrew, or PATH. \(Provider.claude.loginHelp)",
+                         startFailed: "Could not start Claude to renew credentials. \(Provider.claude.loginHelp)",
+                         timedOut: "Claude login renewal timed out. \(Provider.claude.loginHelp)")
         // Like the script, re-read credentials even if the prompt exited nonzero:
         // the CLI may have renewed OAuth before its inference request failed.
     }
 
     private static func renewKimi() async throws {
+        try await runCLI("kimi", arguments: ["login"],
+                         notFound: "Could not find the kimi CLI. \(Provider.kimi.loginHelp)",
+                         startFailed: "Could not start Kimi Code login renewal. \(Provider.kimi.loginHelp)",
+                         timedOut: "Kimi Code login needs reauthorization. \(Provider.kimi.loginHelp)")
+    }
+
+    private static func runCLI(_ name: String, arguments: [String], notFound: String, startFailed: String, timedOut: String) async throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/kimi").path,
-                          "/opt/homebrew/bin/kimi", "/usr/local/bin/kimi"]
-            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/kimi" }
+        let candidates = [home.appendingPathComponent(".local/bin/\(name)").path,
+                          "/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)"]
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/\(name)" }
         guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw UsageFailure(message: "Could not find the kimi CLI. \(Provider.kimi.loginHelp)")
+            throw UsageFailure(message: notFound)
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["login"]
+        process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(home.path)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (environment["PATH"] ?? "")
@@ -250,7 +231,7 @@ actor UsageClient {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() }
-        catch { throw UsageFailure(message: "Could not start Kimi Code login renewal. \(Provider.kimi.loginHelp)") }
+        catch { throw UsageFailure(message: startFailed) }
         let deadline = Date().addingTimeInterval(60)
         while process.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(250))
@@ -259,7 +240,7 @@ actor UsageClient {
             process.terminate()
             try await Task.sleep(for: .seconds(1))
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            throw UsageFailure(message: "Kimi Code login needs reauthorization. \(Provider.kimi.loginHelp)")
+            throw UsageFailure(message: timedOut)
         }
     }
 }
