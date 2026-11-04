@@ -20,9 +20,14 @@ struct ContentView: View {
                 ForEach(stores, id: \.provider) { store in
                     let provider = store.provider
                     let locked = providers.isShown(provider) && !providers.canHide(provider)
-                    Toggle("Show \(provider.name)", isOn: Binding(get: { providers.isShown(provider) }, set: { providers.setShown(provider, $0) }))
-                        .disabled(locked)
-                        .help(locked ? "At least one provider must stay visible" : "")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Show \(provider.name)", isOn: Binding(get: { providers.isShown(provider) }, set: { providers.setShown(provider, $0) }))
+                            .disabled(locked)
+                            .help(locked ? "At least one provider must stay visible" : "")
+                        Toggle("Compact", isOn: Binding(get: { providers.isCompact(provider) }, set: { providers.setCompact(provider, $0) }))
+                            .disabled(!providers.isShown(provider))
+                            .help("Show only the logo and bars in the menu bar")
+                    }
                 }
             }
             .toggleStyle(.switch).controlSize(.small)

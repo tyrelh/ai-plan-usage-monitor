@@ -23,7 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = UsagePanelController(stores: stores, providers: providers, login: login)
         self.panel = panel
         controllers = stores.map { MenuBarController(store: $0, panel: panel) }
-        controllers.forEach { $0.isVisible = providers.isShown($0.store.provider) }
+        controllers.forEach {
+            $0.isVisible = providers.isShown($0.store.provider)
+            $0.isCompact = providers.isCompact($0.store.provider)
+        }
         visibleControllers.forEach { $0.store.refresh() }
         providers.onChange = { [weak self] in self?.applyProviderSettings() }
         scheduleRefresh()
@@ -69,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A provider shown again has skipped refreshes while hidden.
             if shown && !controller.isVisible { controller.store.refresh() }
             controller.isVisible = shown
+            controller.isCompact = providers.isCompact(controller.store.provider)
         }
         panel?.reanchor(among: visibleControllers.compactMap(\.button))
     }
