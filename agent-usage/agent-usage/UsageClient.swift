@@ -12,28 +12,38 @@ actor UsageClient {
         struct Tokens: Decodable { let access_token: String; let account_id: String }
         let tokens: Tokens
     }
+    private struct KimiCredentials: Decodable {
+        let access_token: String
+        let expires_at: Double?
+    }
 
     private var cachedClaudeCredentials: ClaudeCredentials.OAuth?
     private let credentialReader: @Sendable (Bool) throws -> Data
+    private let kimiCredentialReader: @Sendable () throws -> Data
     private let claudeRenewer: @Sendable () async throws -> Void
+    private let kimiRenewer: @Sendable () async throws -> Void
     private let now: @Sendable () -> Date
     private let requestLoader: @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
     init(credentialReader: @escaping @Sendable (Bool) throws -> Data = { try UsageClient.readClaudeKeychain(allowInteraction: $0) },
+         kimiCredentialReader: @escaping @Sendable () throws -> Data = { try UsageClient.readKimiCredentialFile() },
          claudeRenewer: @escaping @Sendable () async throws -> Void = { try await UsageClient.renewClaude() },
+         kimiRenewer: @escaping @Sendable () async throws -> Void = { try await UsageClient.renewKimi() },
          requestLoader: @escaping @Sendable (URLRequest) async throws -> (Data, URLResponse) = { try await UsageClient.loadRequest($0) },
          now: @escaping @Sendable () -> Date = { Date() }) {
         self.credentialReader = credentialReader
+        self.kimiCredentialReader = kimiCredentialReader
         self.claudeRenewer = claudeRenewer
+        self.kimiRenewer = kimiRenewer
         self.requestLoader = requestLoader
         self.now = now
     }
 
-    func fetch(_ provider: Provider, reconnectClaude: Bool = false) async throws -> UsageReading {
+    func fetch(_ provider: Provider, reconnect: Bool = false) async throws -> UsageReading {
         var request: URLRequest
         switch provider {
         case .claude:
-            let credentials = try await claudeCredentials(allowInteraction: reconnectClaude)
+            let credentials = try await claudeCredentials(allowInteraction: reconnect)
             request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
             request.setValue("Bearer \(credentials.accessToken)", forHTTPHeaderField: "Authorization")
             request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
@@ -44,6 +54,19 @@ actor UsageClient {
             request.setValue("Bearer \(credentials.access_token)", forHTTPHeaderField: "Authorization")
             request.setValue(credentials.account_id, forHTTPHeaderField: "ChatGPT-Account-Id")
             request.setValue("codex-cli", forHTTPHeaderField: "User-Agent")
+        case .kimi:
+            if reconnect { try await kimiRenewer() }
+            let credentials = try readKimiCredentials()
+            if let expiresAt = credentials.expires_at, !isCurrent(expiresAt: expiresAt) {
+                throw UsageFailure(message: "Kimi Code's login has expired or expires shortly. \(Provider.kimi.loginHelp)")
+            }
+            let baseURL = (ProcessInfo.processInfo.environment["KIMI_CODE_BASE_URL"] ?? "https://api.kimi.com/coding/v1")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            guard let url = URL(string: "\(baseURL)/usages") else {
+                throw UsageFailure(message: "Kimi Code has an invalid usage endpoint.")
+            }
+            request = URLRequest(url: url)
+            request.setValue("Bearer \(credentials.access_token)", forHTTPHeaderField: "Authorization")
         }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
@@ -84,8 +107,10 @@ actor UsageClient {
         return credentials
     }
 
-    private func isCurrent(_ credentials: ClaudeCredentials.OAuth) -> Bool {
-        credentials.expiresAt / 1000 > now().timeIntervalSince1970 + 60
+    private func isCurrent(_ credentials: ClaudeCredentials.OAuth) -> Bool { isCurrent(expiresAt: credentials.expiresAt / 1000) }
+
+    private func isCurrent(expiresAt seconds: Double) -> Bool {
+        seconds > now().timeIntervalSince1970 + 60
     }
 
     private func decodeClaudeCredentials(_ data: Data) throws -> ClaudeCredentials.OAuth {
@@ -148,17 +173,56 @@ actor UsageClient {
         return credentials.tokens
     }
 
+    private func readKimiCredentials() throws -> KimiCredentials {
+        guard let data = try? kimiCredentialReader(),
+              let credentials = try? JSONDecoder().decode(KimiCredentials.self, from: data),
+              !credentials.access_token.isEmpty else {
+            throw UsageFailure(message: "Cannot read Kimi Code credentials. \(Provider.kimi.loginHelp)")
+        }
+        return credentials
+    }
+
+    private static func readKimiCredentialFile() throws -> Data {
+        let home = ProcessInfo.processInfo.environment["KIMI_CODE_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".kimi-code")
+        let directory = home.appendingPathComponent("credentials")
+        let standard = directory.appendingPathComponent("kimi-code.json")
+        if FileManager.default.fileExists(atPath: standard.path) { return try Data(contentsOf: standard) }
+        let scoped = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("kimi-code-env-") && $0.pathExtension == "json" }
+        guard scoped.count == 1, let credential = scoped.first else {
+            throw UsageFailure(message: "Cannot identify the active Kimi Code credential file. \(Provider.kimi.loginHelp)")
+        }
+        return try Data(contentsOf: credential)
+    }
+
     private static func renewClaude() async throws {
+        try await runCLI("claude", arguments: ["-p", "ok", "--model", "haiku"],
+                         notFound: "Claude credentials expired, but the claude CLI was not found in ~/.local/bin, Homebrew, or PATH. \(Provider.claude.loginHelp)",
+                         startFailed: "Could not start Claude to renew credentials. \(Provider.claude.loginHelp)",
+                         timedOut: "Claude login renewal timed out. \(Provider.claude.loginHelp)")
+        // Like the script, re-read credentials even if the prompt exited nonzero:
+        // the CLI may have renewed OAuth before its inference request failed.
+    }
+
+    private static func renewKimi() async throws {
+        try await runCLI("kimi", arguments: ["login"],
+                         notFound: "Could not find the kimi CLI. \(Provider.kimi.loginHelp)",
+                         startFailed: "Could not start Kimi Code login renewal. \(Provider.kimi.loginHelp)",
+                         timedOut: "Kimi Code login needs reauthorization. \(Provider.kimi.loginHelp)")
+    }
+
+    private static func runCLI(_ name: String, arguments: [String], notFound: String, startFailed: String, timedOut: String) async throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [home.appendingPathComponent(".local/bin/claude").path,
-                          "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
-            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/claude" }
+        let candidates = [home.appendingPathComponent(".local/bin/\(name)").path,
+                          "/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)"]
+            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/\(name)" }
         guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw UsageFailure(message: "Claude credentials expired, but the claude CLI was not found in ~/.local/bin, Homebrew, or PATH. \(Provider.claude.loginHelp)")
+            throw UsageFailure(message: notFound)
         }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = ["-p", "ok", "--model", "haiku"]
+        process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: NSTemporaryDirectory())
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "\(home.path)/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + (environment["PATH"] ?? "")
@@ -167,7 +231,7 @@ actor UsageClient {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() }
-        catch { throw UsageFailure(message: "Could not start Claude to renew credentials. \(Provider.claude.loginHelp)") }
+        catch { throw UsageFailure(message: startFailed) }
         let deadline = Date().addingTimeInterval(60)
         while process.isRunning && Date() < deadline {
             try await Task.sleep(for: .milliseconds(250))
@@ -176,10 +240,8 @@ actor UsageClient {
             process.terminate()
             try await Task.sleep(for: .seconds(1))
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            throw UsageFailure(message: "Claude login renewal timed out. \(Provider.claude.loginHelp)")
+            throw UsageFailure(message: timedOut)
         }
-        // Like the script, re-read credentials even if the prompt exited nonzero:
-        // the CLI may have renewed OAuth before its inference request failed.
     }
 }
 

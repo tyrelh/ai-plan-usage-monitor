@@ -111,11 +111,16 @@ private struct ProviderDetailView: View {
                 }
                 Text("Refreshes every 10 minutes.").font(.caption).foregroundStyle(.secondary)
                 if store.provider == .claude {
-                    Button("Reconnect Claude…") { store.refresh(reconnectClaude: true) }
+                    Button("Reconnect Claude…") { store.refresh(reconnect: true) }
                         .disabled(store.isRefreshing)
                     Text(store.needsReconnect ? "Reconnect to allow Keychain access or renew your login." : "Background refreshes never ask for your Keychain password.")
                         .font(.caption2).foregroundStyle(.secondary)
                     Text("Reconnecting may ask for Keychain access. Expired logins renew through Claude CLI; its small prompt may use plan allowance.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else if store.provider == .kimi {
+                    Button("Reconnect Kimi…") { store.refresh(reconnect: true) }
+                        .disabled(store.isRefreshing)
+                    Text("Renew through Kimi Code CLI without using plan allowance. If reauthorization is required, run kimi login in Terminal.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }

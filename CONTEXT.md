@@ -1,14 +1,14 @@
 # AI plan usage
 
-Usage information for a person's Claude Code and Codex subscriptions, shown together for quick comparison.
+Usage information for a person's Claude Code, Codex, and Kimi Code subscriptions, shown together for quick comparison.
 
 ## Language
 
 **Provider**:
-The service whose subscription usage is shown: Claude Code or Codex.
+The service whose subscription usage is shown: Claude Code, Codex, or Kimi Code.
 
 **Usage window**:
-A provider-defined period over which subscription usage is measured, such as five hours or seven days. Each window has its own utilization and reset time.
+A provider-defined period over which subscription usage is measured, such as five hours, seven days, or one month. Each window has its own utilization and reset time.
 
 **Utilization**:
 The percentage of a usage window's allowance already consumed, as reported by the provider.

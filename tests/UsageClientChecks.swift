@@ -14,6 +14,13 @@ struct UsageClientChecks {
         var status = 200
     }
 
+    struct KimiState {
+        var token = "kimi-token"
+        var expiresAt = Date().addingTimeInterval(3600)
+        var renewals = 0
+        var requests: [String] = []
+    }
+
     static func client(_ state: OSAllocatedUnfairLock<State>) -> UsageClient {
         UsageClient(credentialReader: { allowInteraction in
             try state.withLock { value in
@@ -64,7 +71,7 @@ struct UsageClientChecks {
 
         // An explicit reconnect bypasses a valid cached token and permits a prompt.
         state.withLock { $0.token = "switched-account" }
-        _ = try await monitor.fetch(.claude, reconnectClaude: true)
+        _ = try await monitor.fetch(.claude, reconnect: true)
         state.withLock {
             precondition($0.reads == [false, true])
             precondition($0.requests.last == "Bearer switched-account")
@@ -80,7 +87,7 @@ struct UsageClientChecks {
             precondition($0.renewals == 0)
             $0.status = 200
         }
-        _ = try await monitor.fetch(.claude, reconnectClaude: true)
+        _ = try await monitor.fetch(.claude, reconnect: true)
 
         // Near-expired credentials never start Claude CLI during background polling.
         let expired = OSAllocatedUnfairLock(initialState: State(expiresAt: Date().addingTimeInterval(30)))
@@ -89,7 +96,7 @@ struct UsageClientChecks {
         expired.withLock {
             precondition($0.renewals == 0 && $0.requests.isEmpty && $0.reads == [false])
         }
-        _ = try await expiredMonitor.fetch(.claude, reconnectClaude: true)
+        _ = try await expiredMonitor.fetch(.claude, reconnect: true)
         _ = try await expiredMonitor.fetch(.claude)
         expired.withLock {
             precondition($0.renewals == 1 && $0.reads == [false, true, true])
@@ -114,6 +121,43 @@ struct UsageClientChecks {
         // A fresh app instance cannot silently reuse a previous instance's token.
         let restarted = client(state)
         await requiresReconnect(restarted)
-        print("Usage client checks passed: fresh subscription readings, memory-only tokens, silent reads, reconnect, expiry, renewal, and HTTP 401 recovery.")
+
+        let kimiState = OSAllocatedUnfairLock(initialState: KimiState())
+        let kimi = UsageClient(kimiCredentialReader: {
+            try kimiState.withLock { value in
+                try JSONSerialization.data(withJSONObject: [
+                    "access_token": value.token, "expires_at": value.expiresAt.timeIntervalSince1970
+                ])
+            }
+        }, kimiRenewer: {
+            kimiState.withLock { value in
+                value.renewals += 1
+                value.token = "renewed-kimi-token"
+                value.expiresAt = Date().addingTimeInterval(3600)
+            }
+        }, requestLoader: { request in
+            kimiState.withLock { value in
+                value.requests.append(request.url!.absoluteString)
+                value.requests.append(request.value(forHTTPHeaderField: "Authorization") ?? "")
+            }
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            let body = Data(#"{"usages":{"limit_5h":{"used_ratio":0.5},"limit_month_total":{"used_ratio":0.25}}}"#.utf8)
+            return (body, response)
+        })
+        let kimiReading = try await kimi.fetch(.kimi)
+        precondition(kimiReading.windows.map(\.label) == ["5h", "1M"])
+        precondition(kimiReading.windows[0].utilization == 50 && kimiReading.windows[1].utilization == 25)
+        kimiState.withLock { $0.expiresAt = Date().addingTimeInterval(30) }
+        do {
+            _ = try await kimi.fetch(.kimi)
+            fatalError("Expected Kimi expiry error")
+        } catch is UsageFailure {}
+        _ = try await kimi.fetch(.kimi, reconnect: true)
+        precondition(kimiState.withLock { $0.renewals } == 1)
+        precondition(kimiState.withLock { $0.requests } == [
+            "https://api.kimi.com/coding/v1/usages", "Bearer kimi-token",
+            "https://api.kimi.com/coding/v1/usages", "Bearer renewed-kimi-token"
+        ])
+        print("Usage client checks passed: fresh subscription readings, memory-only tokens, silent reads, reconnect, expiry, renewal, HTTP 401 recovery, and Kimi requests.")
     }
 }
